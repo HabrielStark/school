@@ -298,6 +298,16 @@ const App = () => {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
     map.on("load", () => {
+      // Add Premium Atmospheric Fog
+      map.setFog({
+        "range": [0.5, 10],
+        "color": "#0f172a",
+        "horizon-blend": 0.2,
+        "high-color": "#243b55",
+        "space-color": "#050508",
+        "star-intensity": 0.15
+      });
+
       addMapLayers(map);
       setMapReady(true);
 
