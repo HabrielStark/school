@@ -207,12 +207,26 @@ const addMapLayers = (map) => {
       }
     });
 
+    // Neon Glow Layer (Behind everything)
+    map.addLayer({
+      id: `${route.id}-glow`,
+      type: "line",
+      source: route.id,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": route.color,
+        "line-width": route.width * 3,
+        "line-opacity": 0.4,
+        "line-blur": 3
+      }
+    });
+
     map.addLayer({
       id: `${route.id}-outline`,
       type: "line",
       source: route.id,
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#ffffff", "line-width": route.width + 3, "line-opacity": 0.6 }
+      paint: { "line-color": "#ffffff", "line-width": route.width + 2, "line-opacity": 0.8 }
     });
 
     map.addLayer({
@@ -248,7 +262,7 @@ const App = () => {
   const [focusedLines, setFocusedLines] = useState(null);
   const [lang, setLang] = useState("en");
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
-  const [pitch, setPitch] = useState(45);
+  const [pitch, setPitch] = useState(60); // Start with high pitch for cinematic feel
   const [userLocation, setUserLocation] = useState(null);
   const [showUserLocation, setShowUserLocation] = useState(false);
   const [drawerCollapsed, setDrawerCollapsed] = useState(false);
@@ -274,8 +288,9 @@ const App = () => {
       container: mapNode.current,
       style: initialStyle,
       center: [-0.3763, 39.4699],
-      zoom: 13.5,
-      pitch: pitch,
+      zoom: 11, // Start zoomed out
+      pitch: 0, // Start top-down
+      bearing: -20,
       hash: false,
       attributionControl: false
     });
@@ -285,8 +300,20 @@ const App = () => {
     map.on("load", () => {
       addMapLayers(map);
       setMapReady(true);
-      // Force a resize to ensure tiles are rendered correctly
-      setTimeout(() => map.resize(), 100);
+
+      // Cinematic Fly-in
+      setTimeout(() => {
+        map.resize();
+        map.flyTo({
+          center: [-0.3763, 39.4699],
+          zoom: 13.5,
+          pitch: 60,
+          bearing: 0,
+          duration: 4000,
+          essential: true,
+          easing: (t) => t * (2 - t)
+        });
+      }, 500);
     });
 
     map.on("styledata", () => addMapLayers(map));
