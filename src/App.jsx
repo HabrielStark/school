@@ -440,7 +440,38 @@ const App = () => {
     mapRef.current?.flyTo({ center: coords, zoom: 15, duration: 1500 });
   };
 
-  // Manage Markers with Focus Mode
+  const [currentZoom, setCurrentZoom] = useState(13);
+
+  const ZOOM_THRESHOLDS = {
+    landmarks: 0,   // Always visible
+    train: 12,      // Visible from far
+    metro: 13,      // Visible at city level
+    tram: 13,
+    hospitals: 14,
+    clubs: 14,
+    pools: 15,      // Neighborhood level
+    banks: 15,
+    cafes: 16       // Street level
+  };
+
+  // Manage Markers with Focus Mode & Zoom Levels
+  useEffect(() => {
+    if (!isMapReady) return;
+
+    // Update zoom state
+    const handleZoom = () => {
+      setCurrentZoom(mapRef.current.getZoom());
+    };
+
+    mapRef.current.on('zoom', handleZoom);
+    // Initial zoom set
+    setCurrentZoom(mapRef.current.getZoom());
+
+    return () => {
+      mapRef.current?.off('zoom', handleZoom);
+    };
+  }, [isMapReady]);
+
   useEffect(() => {
     if (!isMapReady) return;
 
@@ -449,6 +480,10 @@ const App = () => {
 
     categories.forEach(cat => {
       if (!visibleCategories.has(cat.id)) return;
+
+      // Check Zoom Threshold
+      const minZoom = ZOOM_THRESHOLDS[cat.id] || 14;
+      if (currentZoom < minZoom) return;
 
       cat.features.forEach((feature, idx) => {
         if (searchQuery && !feature.name.toLowerCase().includes(searchQuery.toLowerCase())) return;
@@ -459,6 +494,9 @@ const App = () => {
 
         const el = document.createElement("div");
         el.dataset.markerId = markerId;
+        // Add transition class for smooth fade-in
+        el.className = "marker-fade-in";
+
         const root = createRoot(el);
         root.render(<CustomMarker iconKey={cat.iconKey} color={cat.color} dimmed={isDimmed} />);
 
@@ -504,7 +542,7 @@ const App = () => {
       });
     });
 
-  }, [isMapReady, visibleCategories, searchQuery, focusedMarkerId, clearFocus, lang]);
+  }, [isMapReady, visibleCategories, searchQuery, focusedMarkerId, clearFocus, lang, currentZoom]);
 
   // Route Visibility (hide irrelevant lines when station focused)
   useEffect(() => {
