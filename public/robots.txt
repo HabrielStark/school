@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://expath.vercel.app/sitemap.xml

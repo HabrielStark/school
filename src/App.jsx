@@ -7,6 +7,8 @@ import {
   Clock, ArrowRight, X, Eye, Languages, ChevronDown, Navigation2, ChevronUp, Navigation
 } from "lucide-react";
 import { createRoot } from "react-dom/client";
+import { HelmetProvider } from 'react-helmet-async';
+import SEO from './components/SEO';
 import { categories, routes, metroLines, metroGuide, viewBounds } from "./data/valencia.js";
 import { languages, getTranslation } from "./data/i18n.js";
 import "./styles.css";
@@ -184,13 +186,16 @@ const TransportPopup = ({ feature, onClose, lang }) => {
 // ============================================================================
 // CUSTOM MARKER
 // ============================================================================
-const CustomMarker = ({ iconKey, color, dimmed }) => {
+const CustomMarker = ({ iconKey, color, dimmed, label, showLabel }) => {
   const Icon = ICON_MAP[iconKey] || Landmark;
   return (
     <div className={`custom-marker ${dimmed ? "dimmed" : ""}`}>
       <div className="marker-pin" style={{ "--color": color }}>
         <Icon className="marker-icon" />
       </div>
+      {showLabel && label && (
+        <div className="marker-label">{label}</div>
+      )}
     </div>
   );
 };
@@ -309,9 +314,43 @@ const App = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [showUserLocation, setShowUserLocation] = useState(false);
   const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState(11); // Track zoom for semantic labels
   const userMarkerRef = useRef(null);
 
   const t = (key) => getTranslation(lang, key);
+
+  // SEO Info Generation
+  const getSEOProps = () => {
+    switch (activeTab) {
+      case 'places':
+        return {
+          title: t('places'),
+          description: "Discover Valencian landmarks, cafés, and hidden gems.",
+          keywords: "Valencia places, landmarks, restaurants, tourism"
+        };
+      case 'metro':
+        return {
+          title: t('guide'),
+          description: "Complete guide to Valencia's metro system, tickets, and travel tips.",
+          keywords: "Valencia metro, tickets, transport guide, subway map"
+        };
+      case 'routes':
+        return {
+          title: t('routes'),
+          description: "Explore transit layers and bike paths across Valencia.",
+          keywords: "Valencia routes, bike paths, transit, navigation"
+        };
+      default:
+        return {
+          title: "Valencia Interactive Map",
+          description: "Interactive Valencia travel guide with landmarks, metro network, and local tips.",
+          keywords: "Valencia, travel guide, Spain, metro, City of Arts and Sciences"
+        };
+    }
+  };
+
+  const seoProps = getSEOProps();
+
 
   const clearFocus = useCallback(() => {
     setFocusedMarkerId(null);
@@ -370,6 +409,14 @@ const App = () => {
     mapRef.current = map;
     return () => map.remove();
   }, []);
+
+  // Zoom listener for semantic labels
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const handleZoom = () => setCurrentZoom(mapRef.current.getZoom());
+    mapRef.current.on("zoom", handleZoom);
+    return () => mapRef.current?.off("zoom", handleZoom);
+  }, [isMapReady]);
 
   // Pitch toggle
   const togglePitch = () => {
@@ -440,38 +487,7 @@ const App = () => {
     mapRef.current?.flyTo({ center: coords, zoom: 15, duration: 1500 });
   };
 
-  const [currentZoom, setCurrentZoom] = useState(13);
-
-  const ZOOM_THRESHOLDS = {
-    landmarks: 0,   // Always visible
-    train: 12,      // Visible from far
-    metro: 13,      // Visible at city level
-    tram: 13,
-    hospitals: 14,
-    clubs: 14,
-    pools: 15,      // Neighborhood level
-    banks: 15,
-    cafes: 16       // Street level
-  };
-
-  // Manage Markers with Focus Mode & Zoom Levels
-  useEffect(() => {
-    if (!isMapReady) return;
-
-    // Update zoom state
-    const handleZoom = () => {
-      setCurrentZoom(mapRef.current.getZoom());
-    };
-
-    mapRef.current.on('zoom', handleZoom);
-    // Initial zoom set
-    setCurrentZoom(mapRef.current.getZoom());
-
-    return () => {
-      mapRef.current?.off('zoom', handleZoom);
-    };
-  }, [isMapReady]);
-
+  // Manage Markers with Focus Mode
   useEffect(() => {
     if (!isMapReady) return;
 
@@ -481,9 +497,15 @@ const App = () => {
     categories.forEach(cat => {
       if (!visibleCategories.has(cat.id)) return;
 
-      // Check Zoom Threshold
-      const minZoom = ZOOM_THRESHOLDS[cat.id] || 14;
+      // Zoom thresholds based on importance
+      const zoomThresholds = { 1: 11, 2: 13, 3: 14.5 };
+      const minZoom = zoomThresholds[cat.importance] || 11;
+
+      // Don't render markers for this category if zoom is below threshold
       if (currentZoom < minZoom) return;
+
+      // Show labels only at higher zoom levels (zoom >= 14)
+      const showLabels = currentZoom >= 14;
 
       cat.features.forEach((feature, idx) => {
         if (searchQuery && !feature.name.toLowerCase().includes(searchQuery.toLowerCase())) return;
@@ -494,11 +516,8 @@ const App = () => {
 
         const el = document.createElement("div");
         el.dataset.markerId = markerId;
-        // Add transition class for smooth fade-in
-        el.className = "marker-fade-in";
-
         const root = createRoot(el);
-        root.render(<CustomMarker iconKey={cat.iconKey} color={cat.color} dimmed={isDimmed} />);
+        root.render(<CustomMarker iconKey={cat.iconKey} color={cat.color} dimmed={isDimmed} label={feature.name} showLabel={showLabels} />);
 
         const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
           .setLngLat(feature.coords)
@@ -588,128 +607,136 @@ const App = () => {
   };
 
   return (
-    <div className="app-container">
-      <div ref={mapNode} className="map-background" />
+    <HelmetProvider>
+      <SEO
+        title={seoProps.title}
+        description={seoProps.description}
+        keywords={seoProps.keywords}
+        lang={lang}
+      />
+      <div className="app-container">
+        <div ref={mapNode} className="map-background" />
 
-      <aside className={`glass-panel ${drawerCollapsed ? 'collapsed' : ''}`}>
-        <div className="drawer-handle" onClick={() => setDrawerCollapsed(!drawerCollapsed)}>
-          <ChevronUp className={`handle-icon ${drawerCollapsed ? 'rotated' : ''}`} size={20} />
-        </div>
-        <header className="panel-header">
-          <div className="brand-row">
-            <div className="brand">
-              <div className="brand-icon">🍊</div>
-              <div className="brand-text">{t("brand")}</div>
-            </div>
-            <LanguageSelector
-              currentLang={lang}
-              onSelect={setLang}
-              isOpen={langDropdownOpen}
-              onToggle={() => setLangDropdownOpen(!langDropdownOpen)}
-            />
+        <aside className={`glass-panel ${drawerCollapsed ? 'collapsed' : ''}`}>
+          <div className="drawer-handle" onClick={() => setDrawerCollapsed(!drawerCollapsed)}>
+            <ChevronUp className={`handle-icon ${drawerCollapsed ? 'rotated' : ''}`} size={20} />
           </div>
-
-          <nav className="nav-tabs">
-            <button className={`nav-tab ${activeTab === "places" ? "active" : ""}`} onClick={() => setActiveTab("places")}>
-              <MapIcon size={16} /> {t("places")}
-            </button>
-            <button className={`nav-tab ${activeTab === "metro" ? "active" : ""}`} onClick={() => setActiveTab("metro")}>
-              <Info size={16} /> {t("guide")}
-            </button>
-            <button className={`nav-tab ${activeTab === "routes" ? "active" : ""}`} onClick={() => setActiveTab("routes")}>
-              <Layers size={16} /> {t("routes")}
-            </button>
-          </nav>
-        </header>
-
-        <div className="panel-content">
-          {activeTab === "places" && (
-            <>
-              <div className="search-wrapper">
-                <Search className="search-icon" />
-                <input
-                  className="search-input"
-                  placeholder={t("search")}
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                />
+          <header className="panel-header">
+            <div className="brand-row">
+              <div className="brand">
+                <div className="brand-icon">🍊</div>
+                <div className="brand-text">{t("brand")}</div>
               </div>
-              <div className="section-title">{t("categories")}</div>
-              {categories.map(cat => (
-                <div key={cat.id} className="list-item" onClick={() => toggleCat(cat.id)}>
-                  <div className="item-left">
-                    <div className="item-icon" style={{ backgroundColor: cat.color }}>
-                      <IconComponent name={cat.iconKey} />
-                    </div>
-                    <div className="item-info">
-                      <span className="item-label">{t("cat_" + cat.id)}</span>
-                      <span className="item-desc">{cat.features.length} {t("locations")}</span>
-                    </div>
-                  </div>
-                  <label className="switch" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={visibleCategories.has(cat.id)} onChange={() => toggleCat(cat.id)} />
-                    <span className="slider"></span>
-                  </label>
-                </div>
-              ))}
-            </>
-          )}
+              <LanguageSelector
+                currentLang={lang}
+                onSelect={setLang}
+                isOpen={langDropdownOpen}
+                onToggle={() => setLangDropdownOpen(!langDropdownOpen)}
+              />
+            </div>
 
-          {activeTab === "metro" && (
-            <>
-              <div className="section-title">{t("ticketsAndTips")}</div>
-              <div className="metro-card">
-                <p className="metro-desc"><strong>{t("zoneA")}:</strong> {metroGuide.ticketInfo.zoneA}</p>
-                <p className="metro-desc"><strong>{t("airport")}:</strong> {metroGuide.ticketInfo.airport}</p>
-              </div>
-              <div className="section-title">{t("metroLines")}</div>
-              {metroLines.map(line => <MetroLineCard key={line.id} line={line} lang={lang} />)}
-            </>
-          )}
+            <nav className="nav-tabs">
+              <button className={`nav-tab ${activeTab === "places" ? "active" : ""}`} onClick={() => setActiveTab("places")}>
+                <MapIcon size={16} /> {t("places")}
+              </button>
+              <button className={`nav-tab ${activeTab === "metro" ? "active" : ""}`} onClick={() => setActiveTab("metro")}>
+                <Info size={16} /> {t("guide")}
+              </button>
+              <button className={`nav-tab ${activeTab === "routes" ? "active" : ""}`} onClick={() => setActiveTab("routes")}>
+                <Layers size={16} /> {t("routes")}
+              </button>
+            </nav>
+          </header>
 
-          {activeTab === "routes" && (
-            <>
-              <div className="section-title">{t("transitLayers")}</div>
-              {routes.map(route => (
-                <div key={route.id} className="list-item" onClick={() => toggleRoute(route.id)}>
-                  <div className="item-left">
-                    <div className="item-icon" style={{ backgroundColor: route.color }}>
-                      <Layers size={18} />
-                    </div>
-                    <div className="item-info">
-                      <span className="item-label">{route.label}</span>
-                    </div>
-                  </div>
-                  <label className="switch" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={visibleRoutes.has(route.id)} onChange={() => toggleRoute(route.id)} />
-                    <span className="slider"></span>
-                  </label>
+          <div className="panel-content">
+            {activeTab === "places" && (
+              <>
+                <div className="search-wrapper">
+                  <Search className="search-icon" />
+                  <input
+                    className="search-input"
+                    placeholder={t("search")}
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
                 </div>
-              ))}
-            </>
-          )}
+                <div className="section-title">{t("categories")}</div>
+                {categories.map(cat => (
+                  <div key={cat.id} className="list-item" onClick={() => toggleCat(cat.id)}>
+                    <div className="item-left">
+                      <div className="item-icon" style={{ backgroundColor: cat.color }}>
+                        <IconComponent name={cat.iconKey} />
+                      </div>
+                      <div className="item-info">
+                        <span className="item-label">{t("cat_" + cat.id)}</span>
+                        <span className="item-desc">{cat.features.length} {t("locations")}</span>
+                      </div>
+                    </div>
+                    <label className="switch" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={visibleCategories.has(cat.id)} onChange={() => toggleCat(cat.id)} />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {activeTab === "metro" && (
+              <>
+                <div className="section-title">{t("ticketsAndTips")}</div>
+                <div className="metro-card">
+                  <p className="metro-desc"><strong>{t("zoneA")}:</strong> {metroGuide.ticketInfo.zoneA}</p>
+                  <p className="metro-desc"><strong>{t("airport")}:</strong> {metroGuide.ticketInfo.airport}</p>
+                </div>
+                <div className="section-title">{t("metroLines")}</div>
+                {metroLines.map(line => <MetroLineCard key={line.id} line={line} lang={lang} />)}
+              </>
+            )}
+
+            {activeTab === "routes" && (
+              <>
+                <div className="section-title">{t("transitLayers")}</div>
+                {routes.map(route => (
+                  <div key={route.id} className="list-item" onClick={() => toggleRoute(route.id)}>
+                    <div className="item-left">
+                      <div className="item-icon" style={{ backgroundColor: route.color }}>
+                        <Layers size={18} />
+                      </div>
+                      <div className="item-info">
+                        <span className="item-label">{route.label}</span>
+                      </div>
+                    </div>
+                    <label className="switch" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={visibleRoutes.has(route.id)} onChange={() => toggleRoute(route.id)} />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </aside>
+
+        <div className="floating-actions">
+          <button className="fab" onClick={toggleMapStyle} title={mapStyle === "dark" ? t("switchToSatellite") : t("switchToMap")}>
+            {mapStyle === "dark" ? <Globe size={20} /> : <MapIcon size={20} />}
+          </button>
+          <button className="fab" onClick={togglePitch} title={pitch === 0 ? t("angledView") : t("topView")}>
+            <Eye size={20} />
+          </button>
+          <button
+            className={`fab ${showUserLocation ? "active" : ""}`}
+            onClick={toggleUserLocation}
+            title={t("myLocation")}
+          >
+            <Navigation2 size={20} />
+          </button>
+          <button className="fab" onClick={fitCity} title={t("resetView")}>
+            <Search size={18} />
+          </button>
         </div>
-      </aside>
-
-      <div className="floating-actions">
-        <button className="fab" onClick={toggleMapStyle} title={mapStyle === "dark" ? t("switchToSatellite") : t("switchToMap")}>
-          {mapStyle === "dark" ? <Globe size={20} /> : <MapIcon size={20} />}
-        </button>
-        <button className="fab" onClick={togglePitch} title={pitch === 0 ? t("angledView") : t("topView")}>
-          <Eye size={20} />
-        </button>
-        <button
-          className={`fab ${showUserLocation ? "active" : ""}`}
-          onClick={toggleUserLocation}
-          title={t("myLocation")}
-        >
-          <Navigation2 size={20} />
-        </button>
-        <button className="fab" onClick={fitCity} title={t("resetView")}>
-          <Search size={18} />
-        </button>
       </div>
-    </div>
+    </HelmetProvider>
   );
 };
 
